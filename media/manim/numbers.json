@@ -1,0 +1,10 @@
+{
+ "evals": {
+  "emails": 50,
+  "intent_accuracy": 92,
+  "tool_accuracy": 92,
+  "facts_found": 86,
+  "seconds_per_email": 0.12
+ },
+ "_source": "project/artifacts/eval_report.json (run 20 Oct 2026, no LLM key: groundedness and cost not measured)"
+}

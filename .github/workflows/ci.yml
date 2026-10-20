@@ -1,0 +1,102 @@
+# CI: lint -> unit tests -> build the whole pipeline -> eval gate -> (main only) deploy to AWS EC2.
+# GitHub only reads workflows from .github/workflows at the repo root, so this file lives here
+# (chapter 9 in the video). Runs without any API key: the eval gate checks the offline metrics.
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-and-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      LLM_PROVIDER: anthropic
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # optional: if set, groundedness is gated too
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+      - name: Lint
+        run: ruff check .
+      - name: Build the pipeline (SQLite fallback, mock Gmail/Calendar)
+        run: |
+          python 01_legacy_data/generate_legacy.py
+          python 02_migration/migrate.py
+          python 05_mcp_servers/seed_mock_data.py
+          python 03_classifier/generate_emails.py
+          python 03_classifier/train.py --epochs 1
+          python 04_rag/build_index.py
+      - name: Tests
+        run: pytest -q
+      - name: Eval gate (50 held-out emails)
+        run: python 08_evals/run_evals.py --gate
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: artifacts/eval_report.json
+
+  # Deploy to the client's EC2 server, only from main and only after the eval gate passed.
+  # Secrets live in GitHub (Settings -> Secrets and variables -> Actions), never in the repo:
+  #   EC2_HOST      the server's public IP or DNS name
+  #   EC2_USER      ubuntu (for an Ubuntu AMI)
+  #   EC2_SSH_KEY   the private key of the EC2 key pair (the .pem file's contents)
+  # One-time server setup is in README.md, "Ship it to AWS EC2".
+  deploy:
+    needs: test-and-eval
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency: production          # never two deploys at once
+    steps:
+      - name: Check the deploy secrets are set
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
+            echo "EC2_HOST, EC2_USER or EC2_SSH_KEY is not set: skipping the deploy."; exit 1
+          fi
+      - name: Set up the SSH key
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2.pem && chmod 600 ~/.ssh/ec2.pem
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+      - name: Pull the new code and restart the app on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/ec2.pem "$EC2_USER@$EC2_HOST" bash -s <<'REMOTE'
+            set -euo pipefail
+            cd ~/vardhan-copilot
+            git fetch --quiet origin main
+            git reset --hard origin/main
+            docker compose -f 09_deploy/docker-compose.yml up -d --build
+            docker compose -f 09_deploy/docker-compose.yml ps
+          REMOTE
+      - name: Check the app answers (from the server itself, so port 8501 can stay closed to the internet)
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+        run: |
+          ssh -i ~/.ssh/ec2.pem "$EC2_USER@$EC2_HOST" bash -s <<'REMOTE'
+            for i in $(seq 1 30); do
+              if curl -fsS http://localhost:8501/_stcore/health >/dev/null; then echo "App is up."; exit 0; fi
+              sleep 10
+            done
+            echo "The app did not answer on port 8501 within 5 minutes."; exit 1
+          REMOTE

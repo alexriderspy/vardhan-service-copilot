@@ -1,0 +1,39 @@
+# Run from the project folder:  docker compose -f 09_deploy/docker-compose.yml up --build
+# Then open http://localhost:8501
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: vardhan
+      POSTGRES_PASSWORD: vardhan
+      POSTGRES_DB: vardhan
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vardhan"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build:
+      context: ..
+      dockerfile: 09_deploy/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+    env_file:
+      - path: ../.env          # your LLM key etc. Optional: the app runs without it (no drafts).
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://vardhan:vardhan@postgres:5432/vardhan
+      # The agent connects as the least-privilege role the migration creates:
+      AGENT_DATABASE_URL: postgresql+psycopg://copilot_agent:${AGENT_DB_PASSWORD:-change-me}@postgres:5432/vardhan
+      AGENT_DB_PASSWORD: ${AGENT_DB_PASSWORD:-change-me}
+    ports: ["8501:8501"]
+    volumes:
+      # Trained model, Chroma index, mock inbox and (real mode) google_token.json live here.
+      # For GOOGLE_MODE=real: run `python 05_mcp_servers/google_login.py` on your machine first;
+      # the token it saves in artifacts/ is picked up by the container.
+      - ../artifacts:/app/artifacts
+
+volumes:
+  pgdata:

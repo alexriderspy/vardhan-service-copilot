@@ -1,0 +1,21 @@
+[project]
+name = "vardhan-service-copilot"
+version = "0.1.0"
+description = "AI Forward Deployed Engineer end-to-end project: legacy migration, fine-tuned classifier, RAG, MCP servers, LangGraph agent."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py311"
+extend-exclude = [".venv", "artifacts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]   # long lines are fine for data tables and prompts
+
+[tool.ruff.lint.isort]
+known-first-party = ["common"]

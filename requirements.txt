@@ -1,0 +1,29 @@
+# --- data + migration ---
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+pandas>=2.2
+python-dotenv>=1.0
+# --- classifier ---
+torch>=2.3
+transformers>=4.44
+datasets>=2.20
+accelerate>=0.33
+scikit-learn>=1.5
+# --- RAG ---
+chromadb>=0.5
+sentence-transformers>=3.0
+# --- MCP servers ---
+mcp>=1.2
+# --- agent + LLM (provider-agnostic) ---
+langgraph>=0.2
+langchain>=0.3
+langchain-anthropic>=0.3
+# --- UI ---
+streamlit>=1.38
+# --- real Google mode (optional, only needed with credentials.json) ---
+google-api-python-client>=2.140
+google-auth-oauthlib>=1.2
+# --- dev ---
+pytest>=8.3
+ruff>=0.6
+langgraph-checkpoint-sqlite>=2.0

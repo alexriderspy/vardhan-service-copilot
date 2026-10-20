@@ -1,0 +1,8 @@
+{
+  "_comment": "REAL mode only: which Google Calendar belongs to which technician. 'primary' = the logged-in account's own calendar. Replace with each technician's calendar id (e.g. suresh.pawar@vardhanpumps.example) once they share their calendars.",
+  "T01": "primary",
+  "T02": "primary",
+  "T03": "primary",
+  "T04": "primary",
+  "T05": "primary"
+}
