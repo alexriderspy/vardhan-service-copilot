@@ -59,15 +59,20 @@ jobs:
     concurrency: production          # never two deploys at once
     steps:
       - name: Check the deploy secrets are set
+        id: check
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
         run: |
           if [ -z "$EC2_HOST" ] || [ -z "$EC2_USER" ] || [ -z "$EC2_SSH_KEY" ]; then
-            echo "EC2_HOST, EC2_USER or EC2_SSH_KEY is not set: skipping the deploy."; exit 1
+            echo "EC2_HOST, EC2_USER or EC2_SSH_KEY is not set yet: skipping the deploy (see README, Ship it to AWS EC2)."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
       - name: Set up the SSH key
+        if: steps.check.outputs.ready == 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
@@ -76,6 +81,7 @@ jobs:
           printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/ec2.pem && chmod 600 ~/.ssh/ec2.pem
           ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
       - name: Pull the new code and restart the app on EC2
+        if: steps.check.outputs.ready == 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -89,6 +95,7 @@ jobs:
             docker compose -f 09_deploy/docker-compose.yml ps
           REMOTE
       - name: Check the app answers (from the server itself, so port 8501 can stay closed to the internet)
+        if: steps.check.outputs.ready == 'true'
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
